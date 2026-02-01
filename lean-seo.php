@@ -28,12 +28,16 @@ define('LEAN_SEO_PLUGIN_URL', plugin_dir_url(__FILE__));
 
 // Load the main class
 require_once LEAN_SEO_PLUGIN_DIR . 'includes/class-lean-seo.php';
+require_once LEAN_SEO_PLUGIN_DIR . 'includes/class-lean-seo-abilities.php';
 
 // Initialize
 function lean_seo_init() {
     return Lean_SEO::get_instance();
 }
 add_action('plugins_loaded', 'lean_seo_init');
+
+// Abilities API
+add_action('wp_abilities_api_init', array('Lean_SEO_Abilities', 'register'));
 
 // Activation hook
 register_activation_hook(__FILE__, 'lean_seo_activate');
