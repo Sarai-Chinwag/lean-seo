@@ -78,6 +78,102 @@ class Lean_SEO_Abilities {
         );
 
         wp_register_ability(
+            'lean-seo/audit-post-seo',
+            array(
+                'label'               => __( 'Audit Post SEO', 'lean-seo' ),
+                'description'         => __( 'Analyzes a post for SEO issues and returns recommendations.', 'lean-seo' ),
+                'category'            => 'site',
+                'execute_callback'    => array( __CLASS__, 'audit_post_seo' ),
+                'permission_callback' => array( __CLASS__, 'can_edit_post' ),
+                'input_schema'        => array(
+                    'type'       => 'object',
+                    'properties' => array(
+                        'post_id' => array(
+                            'type'        => 'integer',
+                            'description' => __( 'Post ID to audit.', 'lean-seo' ),
+                            'required'    => true,
+                        ),
+                    ),
+                ),
+                'output_schema'       => array(
+                    'type'       => 'object',
+                    'properties' => array(
+                        'post_id'      => array( 'type' => 'integer' ),
+                        'title'        => array( 'type' => 'string' ),
+                        'url'          => array( 'type' => 'string' ),
+                        'score'        => array( 'type' => 'integer' ),
+                        'issues'       => array( 
+                            'type'  => 'array',
+                            'items' => array(
+                                'type'       => 'object',
+                                'properties' => array(
+                                    'type'     => array( 'type' => 'string' ),
+                                    'severity' => array( 'type' => 'string' ),
+                                    'message'  => array( 'type' => 'string' ),
+                                    'value'    => array( 'type' => 'string' ),
+                                ),
+                            ),
+                        ),
+                        'stats'        => array(
+                            'type'       => 'object',
+                            'properties' => array(
+                                'title_length'       => array( 'type' => 'integer' ),
+                                'description_length' => array( 'type' => 'integer' ),
+                                'word_count'         => array( 'type' => 'integer' ),
+                                'h1_count'           => array( 'type' => 'integer' ),
+                                'h2_count'           => array( 'type' => 'integer' ),
+                                'internal_links'     => array( 'type' => 'integer' ),
+                                'external_links'     => array( 'type' => 'integer' ),
+                                'images'             => array( 'type' => 'integer' ),
+                                'images_without_alt' => array( 'type' => 'integer' ),
+                            ),
+                        ),
+                    ),
+                ),
+            )
+        );
+
+        wp_register_ability(
+            'lean-seo/scan-seo-issues',
+            array(
+                'label'               => __( 'Scan SEO Issues', 'lean-seo' ),
+                'description'         => __( 'Scans multiple posts for SEO issues and returns a summary.', 'lean-seo' ),
+                'category'            => 'site',
+                'execute_callback'    => array( __CLASS__, 'scan_seo_issues' ),
+                'permission_callback' => array( __CLASS__, 'can_view_sitemaps' ),
+                'input_schema'        => array(
+                    'type'       => 'object',
+                    'properties' => array(
+                        'limit' => array(
+                            'type'        => 'integer',
+                            'description' => __( 'Maximum posts to scan (default: 50).', 'lean-seo' ),
+                            'default'     => 50,
+                        ),
+                        'min_issues' => array(
+                            'type'        => 'integer',
+                            'description' => __( 'Minimum issues to include in results (default: 1).', 'lean-seo' ),
+                            'default'     => 1,
+                        ),
+                    ),
+                ),
+                'output_schema'       => array(
+                    'type'  => 'array',
+                    'items' => array(
+                        'type'       => 'object',
+                        'properties' => array(
+                            'post_id'     => array( 'type' => 'integer' ),
+                            'title'       => array( 'type' => 'string' ),
+                            'url'         => array( 'type' => 'string' ),
+                            'score'       => array( 'type' => 'integer' ),
+                            'issue_count' => array( 'type' => 'integer' ),
+                            'top_issues'  => array( 'type' => 'array' ),
+                        ),
+                    ),
+                ),
+            )
+        );
+
+        wp_register_ability(
             'lean-seo/update-post-seo',
             array(
                 'label'               => __( 'Update Post SEO', 'lean-seo' ),
@@ -266,5 +362,241 @@ class Lean_SEO_Abilities {
 
         $content = wp_strip_all_tags( strip_shortcodes( $post->post_content ) );
         return wp_trim_words( $content, 30, '...' );
+    }
+
+    /**
+     * Audit a single post for SEO issues.
+     *
+     * @param array $input Ability input.
+     * @return array|WP_Error
+     */
+    public static function audit_post_seo( $input ) {
+        $post_id = isset( $input['post_id'] ) ? absint( $input['post_id'] ) : 0;
+        if ( ! $post_id ) {
+            return new WP_Error( 'lean_seo_invalid_post_id', __( 'Post ID is required.', 'lean-seo' ) );
+        }
+
+        $post = get_post( $post_id );
+        if ( ! $post ) {
+            return new WP_Error( 'lean_seo_post_not_found', __( 'Post not found.', 'lean-seo' ) );
+        }
+
+        $content = $post->post_content;
+        $issues = array();
+        $score = 100;
+
+        // Get SEO meta
+        $custom_title = get_post_meta( $post_id, '_lean_seo_title', true );
+        $custom_desc  = get_post_meta( $post_id, '_lean_seo_description', true );
+        $title        = $custom_title ? $custom_title : get_the_title( $post );
+        $description  = $custom_desc ? $custom_desc : self::generate_description( $post );
+
+        // Stats
+        $title_length = strlen( $title );
+        $desc_length  = strlen( $description );
+        $word_count   = str_word_count( wp_strip_all_tags( $content ) );
+        
+        // Count headings
+        preg_match_all( '/<h1[^>]*>/i', $content, $h1_matches );
+        preg_match_all( '/<h2[^>]*>/i', $content, $h2_matches );
+        $h1_count = count( $h1_matches[0] );
+        $h2_count = count( $h2_matches[0] );
+
+        // Count links
+        $site_host = wp_parse_url( home_url(), PHP_URL_HOST );
+        preg_match_all( '/<a[^>]+href=["\']([^"\']+)["\'][^>]*>/i', $content, $link_matches );
+        $internal_links = 0;
+        $external_links = 0;
+        foreach ( $link_matches[1] as $href ) {
+            $link_host = wp_parse_url( $href, PHP_URL_HOST );
+            if ( ! $link_host || $link_host === $site_host ) {
+                $internal_links++;
+            } else {
+                $external_links++;
+            }
+        }
+
+        // Count images and alt text
+        preg_match_all( '/<img[^>]*>/i', $content, $img_matches );
+        $image_count = count( $img_matches[0] );
+        $images_without_alt = 0;
+        foreach ( $img_matches[0] as $img_tag ) {
+            if ( ! preg_match( '/alt=["\'][^"\']+["\']/i', $img_tag ) ) {
+                $images_without_alt++;
+            }
+        }
+
+        // Check title length (ideal: 50-60)
+        if ( $title_length < 30 ) {
+            $issues[] = array(
+                'type'     => 'title_short',
+                'severity' => 'warning',
+                'message'  => 'Title is too short (under 30 characters)',
+                'value'    => (string) $title_length . ' chars',
+            );
+            $score -= 10;
+        } elseif ( $title_length > 60 ) {
+            $issues[] = array(
+                'type'     => 'title_long',
+                'severity' => 'warning',
+                'message'  => 'Title may be truncated in search results (over 60 characters)',
+                'value'    => (string) $title_length . ' chars',
+            );
+            $score -= 5;
+        }
+
+        // Check description length (ideal: 150-160)
+        if ( $desc_length < 100 ) {
+            $issues[] = array(
+                'type'     => 'description_short',
+                'severity' => 'warning',
+                'message'  => 'Meta description is too short (under 100 characters)',
+                'value'    => (string) $desc_length . ' chars',
+            );
+            $score -= 10;
+        } elseif ( $desc_length > 160 ) {
+            $issues[] = array(
+                'type'     => 'description_long',
+                'severity' => 'info',
+                'message'  => 'Meta description may be truncated (over 160 characters)',
+                'value'    => (string) $desc_length . ' chars',
+            );
+            $score -= 3;
+        }
+
+        // Check word count (thin content)
+        if ( $word_count < 300 ) {
+            $issues[] = array(
+                'type'     => 'thin_content',
+                'severity' => 'error',
+                'message'  => 'Content is very thin (under 300 words)',
+                'value'    => (string) $word_count . ' words',
+            );
+            $score -= 20;
+        } elseif ( $word_count < 800 ) {
+            $issues[] = array(
+                'type'     => 'short_content',
+                'severity' => 'warning',
+                'message'  => 'Content is relatively short (under 800 words)',
+                'value'    => (string) $word_count . ' words',
+            );
+            $score -= 10;
+        }
+
+        // Check H2 headings
+        if ( $h2_count === 0 && $word_count > 300 ) {
+            $issues[] = array(
+                'type'     => 'no_h2',
+                'severity' => 'warning',
+                'message'  => 'No H2 headings found - consider adding structure',
+                'value'    => '0 H2 tags',
+            );
+            $score -= 10;
+        }
+
+        // Check internal links
+        if ( $internal_links === 0 ) {
+            $issues[] = array(
+                'type'     => 'no_internal_links',
+                'severity' => 'warning',
+                'message'  => 'No internal links - consider linking to related content',
+                'value'    => '0 internal links',
+            );
+            $score -= 10;
+        }
+
+        // Check images
+        if ( $image_count === 0 && $word_count > 300 ) {
+            $issues[] = array(
+                'type'     => 'no_images',
+                'severity' => 'warning',
+                'message'  => 'No images in content',
+                'value'    => '0 images',
+            );
+            $score -= 10;
+        }
+
+        // Check image alt text
+        if ( $images_without_alt > 0 ) {
+            $issues[] = array(
+                'type'     => 'missing_alt_text',
+                'severity' => 'warning',
+                'message'  => 'Some images are missing alt text',
+                'value'    => (string) $images_without_alt . ' images without alt',
+            );
+            $score -= 5 * $images_without_alt;
+        }
+
+        $score = max( 0, $score );
+
+        return array(
+            'post_id' => $post_id,
+            'title'   => $post->post_title,
+            'url'     => get_permalink( $post_id ),
+            'score'   => $score,
+            'issues'  => $issues,
+            'stats'   => array(
+                'title_length'       => $title_length,
+                'description_length' => $desc_length,
+                'word_count'         => $word_count,
+                'h1_count'           => $h1_count,
+                'h2_count'           => $h2_count,
+                'internal_links'     => $internal_links,
+                'external_links'     => $external_links,
+                'images'             => $image_count,
+                'images_without_alt' => $images_without_alt,
+            ),
+        );
+    }
+
+    /**
+     * Scan multiple posts for SEO issues.
+     *
+     * @param array $input Ability input.
+     * @return array
+     */
+    public static function scan_seo_issues( $input ) {
+        $limit      = isset( $input['limit'] ) ? absint( $input['limit'] ) : 50;
+        $min_issues = isset( $input['min_issues'] ) ? absint( $input['min_issues'] ) : 1;
+
+        $posts = get_posts( array(
+            'post_type'      => 'post',
+            'post_status'    => 'publish',
+            'posts_per_page' => -1,
+            'orderby'        => 'date',
+            'order'          => 'DESC',
+        ) );
+
+        $results = array();
+
+        foreach ( $posts as $post ) {
+            $audit = self::audit_post_seo( array( 'post_id' => $post->ID ) );
+            
+            if ( is_wp_error( $audit ) ) {
+                continue;
+            }
+
+            if ( count( $audit['issues'] ) >= $min_issues ) {
+                $results[] = array(
+                    'post_id'     => $audit['post_id'],
+                    'title'       => $audit['title'],
+                    'url'         => $audit['url'],
+                    'score'       => $audit['score'],
+                    'issue_count' => count( $audit['issues'] ),
+                    'top_issues'  => array_slice( array_column( $audit['issues'], 'type' ), 0, 3 ),
+                );
+            }
+
+            if ( count( $results ) >= $limit ) {
+                break;
+            }
+        }
+
+        // Sort by score ascending (worst first)
+        usort( $results, function( $a, $b ) {
+            return $a['score'] - $b['score'];
+        } );
+
+        return $results;
     }
 }
