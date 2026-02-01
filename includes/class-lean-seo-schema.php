@@ -112,8 +112,8 @@ class Lean_SEO_Schema {
             'publisher' => array('@id' => home_url('/#organization')),
             'author' => array(
                 '@type' => 'Person',
-                'name' => get_the_author(),
-                'url' => get_author_posts_url(get_the_author_meta('ID')),
+                'name' => get_the_author() ?: 'Sarai Chinwag',
+                'url' => get_the_author() ? get_author_posts_url(get_the_author_meta('ID')) : home_url('/about'),
             ),
         );
 
