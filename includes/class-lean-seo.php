@@ -69,6 +69,29 @@ class Lean_SEO {
             add_action('add_meta_boxes', array($this, 'add_meta_box'));
             add_action('save_post', array($this, 'save_meta'), 10, 1);
         }
+
+        // Filter robots.txt to include our sitemap
+        add_filter('robots_txt', array($this, 'filter_robots_txt'), 999, 2);
+    }
+
+    /**
+     * Filter robots.txt to include our sitemap
+     */
+    public function filter_robots_txt($output, $public) {
+        // Remove any existing sitemap references (e.g., from old Yoast)
+        $output = preg_replace('/^.*sitemap.*$\n?/mi', '', $output);
+        
+        // Remove Yoast comment blocks
+        $output = preg_replace('/# START YOAST BLOCK.*?# END YOAST BLOCK\s*/s', '', $output);
+        
+        // Trim and add our sitemap
+        $output = trim($output);
+        if ($output) {
+            $output .= "\n\n";
+        }
+        $output .= "Sitemap: " . home_url('/sitemap.xml') . "\n";
+        
+        return $output;
     }
 
     /**
@@ -124,6 +147,7 @@ class Lean_SEO {
      */
     public function sitemap_query_vars($vars) {
         $vars[] = 'lean_sitemap';
+        $vars[] = 'sitemap_page';
         return $vars;
     }
 
