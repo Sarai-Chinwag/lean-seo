@@ -36,8 +36,12 @@ function lean_seo_init() {
 }
 add_action('plugins_loaded', 'lean_seo_init');
 
-// Abilities API
-add_action('wp_abilities_api_init', array('Lean_SEO_Abilities', 'register'));
+// Abilities API - check if hook already fired
+if ( did_action( 'wp_abilities_api_init' ) ) {
+    Lean_SEO_Abilities::register();
+} else {
+    add_action('wp_abilities_api_init', array('Lean_SEO_Abilities', 'register'));
+}
 
 // Activation hook
 register_activation_hook(__FILE__, 'lean_seo_activate');
