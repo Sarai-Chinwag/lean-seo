@@ -17,6 +17,8 @@ class Lean_SEO_Sitemap {
      */
     public static function register_routes() {
         add_rewrite_rule('^sitemap\.xml$', 'index.php?lean_sitemap=index', 'top');
+        // Legacy Yoast sitemap URL redirect for backwards compatibility
+        add_rewrite_rule('^sitemap_index\.xml$', 'index.php?lean_sitemap=index', 'top');
         add_rewrite_rule('^sitemap-posts\.xml$', 'index.php?lean_sitemap=posts', 'top');
         add_rewrite_rule('^sitemap-posts-([0-9]+)\.xml$', 'index.php?lean_sitemap=posts&sitemap_page=$matches[1]', 'top');
         add_rewrite_rule('^sitemap-pages\.xml$', 'index.php?lean_sitemap=pages', 'top');
