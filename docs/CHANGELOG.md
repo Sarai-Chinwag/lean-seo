@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.1.0] - 2026-02-23
+
+### Added
+- FAQPage schema auto-detection from post content
+
 ## [1.0.1] - 2026-02-01
 
 ### Changed
