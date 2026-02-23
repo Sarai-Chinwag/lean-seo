@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.0] - 2026-02-23
+
+### Added
+- IndexNow integration for automatic search engine URL submission on publish
+
 ## [1.1.0] - 2026-02-23
 
 ### Added
