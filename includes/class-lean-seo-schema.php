@@ -114,11 +114,7 @@ class Lean_SEO_Schema {
             'mainEntityOfPage' => array('@id' => get_permalink() . '#webpage'),
             'wordCount' => str_word_count(wp_strip_all_tags($post->post_content)),
             'publisher' => array('@id' => home_url('/#organization')),
-            'author' => array(
-                '@type' => 'Person',
-                'name' => get_the_author() ?: 'Sarai Chinwag',
-                'url' => get_the_author() ? get_author_posts_url(get_the_author_meta('ID')) : home_url('/about'),
-            ),
+            'author' => self::get_author_schema(),
         );
 
         // Add image
@@ -193,6 +189,57 @@ class Lean_SEO_Schema {
             '@type' => 'BreadcrumbList',
             '@id' => get_permalink() . '#breadcrumb',
             'itemListElement' => $items
+        );
+    }
+
+    /**
+     * Get publisher/author defaults from options.
+     *
+     * @since 1.3.0
+     * @return array {
+     *     @type string $author_name    Fallback author name.
+     *     @type string $author_url     Fallback author URL.
+     *     @type string $author_type    Schema type: 'Person' or 'Organization'.
+     * }
+     */
+    public static function get_publisher_defaults() {
+        $defaults = array(
+            'author_name' => get_bloginfo( 'name' ),
+            'author_url'  => home_url( '/' ),
+            'author_type' => 'Person',
+        );
+
+        $saved = get_option( 'lean_seo_schema', array() );
+
+        return wp_parse_args( $saved, $defaults );
+    }
+
+    /**
+     * Build author schema for the current post.
+     *
+     * Uses post author if available, otherwise falls back to
+     * publisher defaults from options.
+     *
+     * @since 1.3.0
+     * @return array Schema.org Person or Organization array.
+     */
+    private static function get_author_schema() {
+        $author_name = get_the_author();
+
+        if ( $author_name ) {
+            return array(
+                '@type' => 'Person',
+                'name'  => $author_name,
+                'url'   => get_author_posts_url( get_the_author_meta( 'ID' ) ),
+            );
+        }
+
+        $publisher = self::get_publisher_defaults();
+
+        return array(
+            '@type' => $publisher['author_type'],
+            'name'  => $publisher['author_name'],
+            'url'   => $publisher['author_url'],
         );
     }
 

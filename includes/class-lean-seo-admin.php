@@ -13,6 +13,140 @@ if (!defined('ABSPATH')) {
 class Lean_SEO_Admin {
 
     /**
+     * Register settings page and fields.
+     *
+     * @since 1.3.0
+     */
+    public static function register_settings() {
+        register_setting( 'lean_seo_settings', 'lean_seo_schema', array(
+            'type'              => 'array',
+            'sanitize_callback' => array( __CLASS__, 'sanitize_schema_settings' ),
+            'default'           => array(),
+        ) );
+
+        add_settings_section(
+            'lean_seo_schema_section',
+            __( 'Schema / Publisher Defaults', 'lean-seo' ),
+            function () {
+                echo '<p>' . esc_html__( 'Fallback author used when a post has no WordPress author assigned.', 'lean-seo' ) . '</p>';
+            },
+            'lean_seo_settings'
+        );
+
+        $fields = array(
+            'author_name' => __( 'Author Name', 'lean-seo' ),
+            'author_url'  => __( 'Author URL', 'lean-seo' ),
+            'author_type' => __( 'Author Type', 'lean-seo' ),
+        );
+
+        foreach ( $fields as $key => $label ) {
+            add_settings_field(
+                'lean_seo_schema_' . $key,
+                $label,
+                array( __CLASS__, 'render_schema_field' ),
+                'lean_seo_settings',
+                'lean_seo_schema_section',
+                array( 'key' => $key, 'label' => $label )
+            );
+        }
+    }
+
+    /**
+     * Render a single schema settings field.
+     *
+     * @since 1.3.0
+     * @param array $args Field arguments.
+     */
+    public static function render_schema_field( $args ) {
+        $defaults = Lean_SEO_Schema::get_publisher_defaults();
+        $key      = $args['key'];
+        $value    = $defaults[ $key ];
+
+        if ( 'author_type' === $key ) {
+            printf(
+                '<select name="lean_seo_schema[%s]" id="lean_seo_schema_%s">',
+                esc_attr( $key ),
+                esc_attr( $key )
+            );
+            foreach ( array( 'Person', 'Organization' ) as $type ) {
+                printf(
+                    '<option value="%s"%s>%s</option>',
+                    esc_attr( $type ),
+                    selected( $value, $type, false ),
+                    esc_html( $type )
+                );
+            }
+            echo '</select>';
+        } else {
+            printf(
+                '<input type="%s" name="lean_seo_schema[%s]" id="lean_seo_schema_%s" value="%s" class="regular-text">',
+                'author_url' === $key ? 'url' : 'text',
+                esc_attr( $key ),
+                esc_attr( $key ),
+                esc_attr( $value )
+            );
+        }
+    }
+
+    /**
+     * Sanitize schema settings.
+     *
+     * @since 1.3.0
+     * @param array $input Raw input.
+     * @return array Sanitized values.
+     */
+    public static function sanitize_schema_settings( $input ) {
+        $clean = array();
+
+        if ( ! empty( $input['author_name'] ) ) {
+            $clean['author_name'] = sanitize_text_field( $input['author_name'] );
+        }
+        if ( ! empty( $input['author_url'] ) ) {
+            $clean['author_url'] = esc_url_raw( $input['author_url'] );
+        }
+        if ( ! empty( $input['author_type'] ) && in_array( $input['author_type'], array( 'Person', 'Organization' ), true ) ) {
+            $clean['author_type'] = $input['author_type'];
+        }
+
+        return $clean;
+    }
+
+    /**
+     * Add settings page under Settings menu.
+     *
+     * @since 1.3.0
+     */
+    public static function add_settings_page() {
+        add_options_page(
+            __( 'Lean SEO', 'lean-seo' ),
+            __( 'Lean SEO', 'lean-seo' ),
+            'manage_options',
+            'lean-seo',
+            array( __CLASS__, 'render_settings_page' )
+        );
+    }
+
+    /**
+     * Render the settings page.
+     *
+     * @since 1.3.0
+     */
+    public static function render_settings_page() {
+        ?>
+        <div class="wrap">
+            <h1><?php esc_html_e( 'Lean SEO Settings', 'lean-seo' ); ?></h1>
+            <form method="post" action="options.php">
+                <?php
+                settings_fields( 'lean_seo_settings' );
+                do_settings_sections( 'lean_seo_settings' );
+                submit_button();
+                ?>
+            </form>
+        </div>
+        <?php
+    }
+
+    /**
      * Add meta box
      */
     public static function add_meta_box() {

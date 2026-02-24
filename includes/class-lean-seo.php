@@ -68,6 +68,8 @@ class Lean_SEO {
         if (is_admin()) {
             add_action('add_meta_boxes', array($this, 'add_meta_box'));
             add_action('save_post', array($this, 'save_meta'), 10, 1);
+            add_action('admin_menu', array('Lean_SEO_Admin', 'add_settings_page'));
+            add_action('admin_init', array('Lean_SEO_Admin', 'register_settings'));
         }
 
         // Filter robots.txt to include our sitemap
