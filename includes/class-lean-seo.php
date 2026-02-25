@@ -150,6 +150,7 @@ class Lean_SEO {
     public function sitemap_query_vars($vars) {
         $vars[] = 'lean_sitemap';
         $vars[] = 'sitemap_page';
+        $vars[] = 'lean_cpt';
         return $vars;
     }
 
