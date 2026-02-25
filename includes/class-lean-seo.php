@@ -60,7 +60,7 @@ class Lean_SEO {
         remove_action('wp_head', 'rel_canonical');
 
         // Sitemap
-        add_action('init', array($this, 'register_sitemap_routes'));
+        add_action('init', array($this, 'register_sitemap_routes'), 20);
         add_filter('query_vars', array($this, 'sitemap_query_vars'));
         add_action('template_redirect', array($this, 'handle_sitemap'));
 
