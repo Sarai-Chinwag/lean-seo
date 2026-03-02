@@ -309,12 +309,48 @@ class Lean_SEO_Schema {
     }
 
     /**
+     * Question words that indicate a heading is a question even without "?".
+     *
+     * @since 1.5.0
+     * @var string
+     */
+    private static $question_words = 'What|Why|How|When|Where|Can|Do|Is|Are|Does|Did|Will|Would|Should|Could';
+
+    /**
+     * Check whether a heading is a question.
+     *
+     * A heading counts as a question if it:
+     * 1. Ends with a question mark, OR
+     * 2. Starts with a recognised question word (What, Why, How, etc.)
+     *
+     * @since 1.5.0
+     * @param string $heading_text Plain-text heading (tags already stripped).
+     * @return bool
+     */
+    private static function is_question_heading( $heading_text ) {
+        // Ends with "?"
+        if ( substr( $heading_text, -1 ) === '?' ) {
+            return true;
+        }
+
+        // Starts with a question word (case-insensitive, followed by a space)
+        if ( preg_match( '/^(' . self::$question_words . ')\s/i', $heading_text ) ) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
      * Extract question/answer pairs from post content HTML.
      *
-     * Splits content on H2/H3 boundaries, identifies headings that end
-     * with a question mark, and captures the following content as the answer.
+     * Splits content on H2/H3 boundaries, identifies headings that are
+     * questions (end with "?" OR start with question words like What, Why,
+     * How, When, Where, Can, Do, Is, Are, Does), and captures the following
+     * content as the answer.
      *
      * @since 1.1.0
+     * @since 1.5.0 Added question-word detection for headings without "?".
      * @param string $content Raw post content (may contain block markup).
      * @return array Array of ['question' => string, 'answer' => string].
      */
@@ -354,8 +390,8 @@ class Lean_SEO_Schema {
                 continue;
             }
 
-            // Only process headings that end with a question mark
-            if ( substr( $heading_text, -1 ) !== '?' ) {
+            // Check if heading is a question (ends with "?" or starts with question word)
+            if ( ! self::is_question_heading( $heading_text ) ) {
                 // If we were in an explicit FAQ section and hit a non-question
                 // non-FAQ heading, we've left the section
                 if ( $in_faq_section && ! preg_match( '/\b(FAQ|Frequently\s+Asked)/i', $heading_text ) ) {
