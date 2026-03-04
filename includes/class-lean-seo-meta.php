@@ -41,12 +41,37 @@ class Lean_SEO_Meta {
 
         if ($image) {
             echo '<meta property="og:image" content="' . esc_url($image) . '">' . "\n";
+
+            // Image dimensions help Pinterest and Facebook render correctly
+            $image_id = is_singular() ? get_post_thumbnail_id() : 0;
+            if ($image_id) {
+                $image_meta = wp_get_attachment_image_src($image_id, 'large');
+                if ($image_meta) {
+                    echo '<meta property="og:image:width" content="' . (int) $image_meta[1] . '">' . "\n";
+                    echo '<meta property="og:image:height" content="' . (int) $image_meta[2] . '">' . "\n";
+                }
+            }
         }
 
         // Article specific
         if (is_singular('post')) {
             echo '<meta property="article:published_time" content="' . get_the_date('c') . '">' . "\n";
             echo '<meta property="article:modified_time" content="' . get_the_modified_date('c') . '">' . "\n";
+
+            // article:section — primary category for rich pin categorization
+            $primary_category = self::get_primary_category();
+            if ($primary_category) {
+                echo '<meta property="article:section" content="' . esc_attr($primary_category) . '">' . "\n";
+            }
+
+            // Pinterest-optimized tags for rich pins
+            $pinterest_image = self::get_pinterest_image();
+            if ($pinterest_image) {
+                echo '<meta property="og:pin:media" content="' . esc_url($pinterest_image) . '">' . "\n";
+            }
+            if ($description) {
+                echo '<meta property="og:pin:description" content="' . esc_attr($description) . '">' . "\n";
+            }
         }
 
         // Twitter Card
@@ -139,6 +164,46 @@ class Lean_SEO_Meta {
         }
 
         return apply_filters('lean_seo_default_image', '');
+    }
+
+    /**
+     * Get full-resolution featured image for Pinterest.
+     *
+     * Pinterest renders at high DPI so we use 'full' size instead of 'large'.
+     * Falls back to null when no featured image exists.
+     *
+     * @return string|null Full-resolution image URL or null.
+     */
+    public static function get_pinterest_image() {
+        if (is_singular() && has_post_thumbnail()) {
+            return get_the_post_thumbnail_url(get_the_ID(), 'full');
+        }
+
+        return null;
+    }
+
+    /**
+     * Get the primary category name for the current post.
+     *
+     * Returns the first category assigned to the post (WordPress stores the
+     * primary/default category first). Used for article:section meta tag.
+     *
+     * @return string|null Category name or null.
+     */
+    public static function get_primary_category() {
+        $categories = get_the_category();
+        if (empty($categories)) {
+            return null;
+        }
+
+        // Skip "Uncategorized" — it adds no value for categorization
+        foreach ($categories as $cat) {
+            if ($cat->slug !== 'uncategorized') {
+                return $cat->name;
+            }
+        }
+
+        return null;
     }
 
     /**
