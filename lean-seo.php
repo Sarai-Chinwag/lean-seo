@@ -59,3 +59,9 @@ register_deactivation_hook(__FILE__, 'lean_seo_deactivate');
 function lean_seo_deactivate() {
     flush_rewrite_rules();
 }
+
+// WP-CLI commands.
+if ( defined( 'WP_CLI' ) && WP_CLI ) {
+    require_once LEAN_SEO_PLUGIN_DIR . 'includes/class-lean-seo-cli.php';
+    WP_CLI::add_command( 'lean-seo', 'Lean_SEO_CLI' );
+}
