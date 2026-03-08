@@ -26,6 +26,7 @@ class Lean_SEO_Schema {
 
         // Article schema for posts
         if (is_singular('post')) {
+            $schema[] = self::get_webpage_schema();
             $schema[] = self::get_article_schema();
             $schema[] = self::get_breadcrumb_schema();
             $faq_schema = self::get_faq_schema();
@@ -89,10 +90,17 @@ class Lean_SEO_Schema {
         // Add logo if available
         $custom_logo_id = get_theme_mod('custom_logo');
         if ($custom_logo_id) {
-            $schema['logo'] = array(
+            $logo_url = wp_get_attachment_image_url($custom_logo_id, 'full');
+            $logo_meta = wp_get_attachment_metadata($custom_logo_id);
+            $logo_schema = array(
                 '@type' => 'ImageObject',
-                'url' => wp_get_attachment_image_url($custom_logo_id, 'full'),
+                'url' => $logo_url,
             );
+            if ($logo_meta && isset($logo_meta['width'], $logo_meta['height'])) {
+                $logo_schema['width'] = $logo_meta['width'];
+                $logo_schema['height'] = $logo_meta['height'];
+            }
+            $schema['logo'] = $logo_schema;
         }
 
         return $schema;
@@ -119,10 +127,18 @@ class Lean_SEO_Schema {
 
         // Add image
         if (has_post_thumbnail()) {
-            $schema['image'] = array(
+            $thumb_id = get_post_thumbnail_id(get_the_ID());
+            $thumb_url = get_the_post_thumbnail_url(get_the_ID(), 'large');
+            $thumb_meta = wp_get_attachment_metadata($thumb_id);
+            $image_schema = array(
                 '@type' => 'ImageObject',
-                'url' => get_the_post_thumbnail_url(get_the_ID(), 'large'),
+                'url' => $thumb_url,
             );
+            if ($thumb_meta && isset($thumb_meta['width'], $thumb_meta['height'])) {
+                $image_schema['width'] = $thumb_meta['width'];
+                $image_schema['height'] = $thumb_meta['height'];
+            }
+            $schema['image'] = $image_schema;
         }
 
         // Add description
@@ -251,6 +267,11 @@ class Lean_SEO_Schema {
      *    followed by H3/H4 question headings (ending in ?) with paragraph answers.
      * 2. Question-heading pattern: 2+ H2/H3 headings ending in "?" where the
      *    text between that heading and the next heading is the answer.
+     * 3. Numbered/stepped fact pattern: H3 headings like "1. Fact text" or
+     *    "Step 1: Instruction text" — used for "Facts About" and how-to posts.
+     * 4. Thematic spiritual meaning pattern: H3 noun-phrase headings on posts
+     *    whose title contains "Spiritual Meaning" or "Symbolism" — generates
+     *    questions like "What does [topic] mean spiritually in terms of [heading]?"
      *
      * Returns null if fewer than 2 Q&A pairs are found.
      *
@@ -274,7 +295,7 @@ class Lean_SEO_Schema {
         }
 
         $content = $post->post_content;
-        $qa_pairs = self::extract_faq_pairs( $content );
+        $qa_pairs = self::extract_faq_pairs( $content, $post );
 
         /**
          * Filter the extracted FAQ Q&A pairs before schema output.
@@ -344,20 +365,31 @@ class Lean_SEO_Schema {
     /**
      * Extract question/answer pairs from post content HTML.
      *
-     * Splits content on H2/H3 boundaries, identifies headings that are
-     * questions (end with "?" OR start with question words like What, Why,
-     * How, When, Where, Can, Do, Is, Are, Does), and captures the following
-     * content as the answer.
+     * Runs detection strategies in order, returning the first set that
+     * yields at least 2 Q&A pairs:
+     *
+     * Strategy 1 — Question headings: H2/H3 ending in "?" or starting with
+     *   a question word (What, Why, How, …). Also handles explicit FAQ sections.
+     * Strategy 2 — Numbered/stepped facts: H3 headings like "1. Fact text" or
+     *   "Step N: Instruction text". Designed for "Facts About" and how-to posts.
+     * Strategy 3 — Thematic spiritual meaning: H3 noun-phrase headings on posts
+     *   whose title contains "Spiritual Meaning" or "Symbolism". Generates
+     *   questions like "What does [topic] mean spiritually in terms of [heading]?"
      *
      * @since 1.1.0
      * @since 1.5.0 Added question-word detection for headings without "?".
-     * @param string $content Raw post content (may contain block markup).
+     * @since 1.6.0 Added numbered-fact and thematic-spiritual fallback strategies;
+     *              accepts optional $post for title-aware extraction.
+     * @param string       $content Raw post content (may contain block markup).
+     * @param WP_Post|null $post    Optional post object for title-aware strategies.
      * @return array Array of ['question' => string, 'answer' => string].
      */
-    private static function extract_faq_pairs( $content ) {
+    private static function extract_faq_pairs( $content, $post = null ) {
         // Render blocks/shortcodes to get final HTML
         $html = do_blocks( $content );
         $html = do_shortcode( $html );
+
+        // --- Strategy 1: Question headings (existing logic) ---
 
         // Split on H2 and H3 tags, keeping the delimiters
         $parts = preg_split(
@@ -367,66 +399,306 @@ class Lean_SEO_Schema {
             PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY
         );
 
+        $qa_pairs = array();
+        $in_faq_section = false;
+
+        if ( $parts ) {
+            for ( $i = 0; $i < count( $parts ); $i++ ) {
+                $part = trim( $parts[ $i ] );
+
+                // Check if this is a heading
+                if ( ! preg_match( '/<h([23])[^>]*>(.*?)<\/h\1>/is', $part, $heading_match ) ) {
+                    continue;
+                }
+
+                $heading_text = trim( wp_strip_all_tags( $heading_match[2] ) );
+
+                // Strategy 1: Detect explicit FAQ section header
+                if ( preg_match( '/\b(FAQ|Frequently\s+Asked)/i', $heading_text ) ) {
+                    $in_faq_section = true;
+                    continue;
+                }
+
+                // Check if heading is a question (ends with "?" or starts with question word)
+                if ( ! self::is_question_heading( $heading_text ) ) {
+                    // If we were in an explicit FAQ section and hit a non-question
+                    // non-FAQ heading, we've left the section
+                    if ( $in_faq_section && ! preg_match( '/\b(FAQ|Frequently\s+Asked)/i', $heading_text ) ) {
+                        $in_faq_section = false;
+                    }
+                    continue;
+                }
+
+                // Get the answer: everything between this heading and the next heading
+                $answer_html = '';
+                if ( isset( $parts[ $i + 1 ] ) ) {
+                    $next = trim( $parts[ $i + 1 ] );
+                    // If next part is NOT a heading, it's the answer content
+                    if ( ! preg_match( '/^<h[23][^>]*>/i', $next ) ) {
+                        $answer_html = $next;
+                    }
+                }
+
+                // Clean the answer text
+                $answer_text = self::clean_answer_text( $answer_html );
+
+                // Skip if answer is too short (likely not a real Q&A)
+                if ( strlen( $answer_text ) < 20 ) {
+                    continue;
+                }
+
+                // Truncate very long answers (Google recommends concise FAQ answers)
+                if ( strlen( $answer_text ) > 500 ) {
+                    $answer_text = mb_substr( $answer_text, 0, 497 ) . '...';
+                }
+
+                $qa_pairs[] = array(
+                    'question' => $heading_text,
+                    'answer'   => $answer_text,
+                );
+            }
+        }
+
+        if ( count( $qa_pairs ) >= 2 ) {
+            return $qa_pairs;
+        }
+
+        // --- Strategy 2: Numbered / stepped headings (Facts About & how-to posts) ---
+        $numbered = self::extract_numbered_pairs( $html, $post );
+        if ( count( $numbered ) >= 2 ) {
+            return $numbered;
+        }
+
+        // --- Strategy 3: Thematic headings (Spiritual Meaning / Symbolism posts) ---
+        $thematic = self::extract_thematic_pairs( $html, $post );
+        if ( count( $thematic ) >= 2 ) {
+            return $thematic;
+        }
+
+        return $qa_pairs;
+    }
+
+    /**
+     * Extract Q&A pairs from numbered or stepped H3 headings.
+     *
+     * Matches headings like:
+     * - "1. Parrots Are Exceptionally Smart"
+     * - "Step 1: Go Where the UFOs Go"
+     * - "2) Their beaks are incredibly strong"
+     *
+     * The number/step prefix is stripped; "They/They're/Their" pronouns at
+     * the start of a heading are replaced with the subject extracted from the
+     * post title (e.g. "Parrots" from "10 Amazing Facts About Parrots").
+     *
+     * @since 1.6.0
+     * @param string       $html Rendered HTML content.
+     * @param WP_Post|null $post Optional post object for subject extraction.
+     * @return array Array of ['question' => string, 'answer' => string].
+     */
+    private static function extract_numbered_pairs( $html, $post = null ) {
+        // Split on H3 tags only — numbered facts are always H3
+        $parts = preg_split(
+            '/(<h3[^>]*>.*?<\/h3>)/is',
+            $html,
+            -1,
+            PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY
+        );
+
         if ( ! $parts ) {
             return array();
         }
 
+        // Try to extract the subject from the post title for pronoun replacement.
+        // "10 Amazing Facts About Parrots" → "Parrots"
+        // "How to Get Abducted by Aliens"  → no replacement
+        $subject = '';
+        if ( $post && preg_match( '/\bfacts about\s+(.+?)(?:\s*[\|\-–].*)?$/i', $post->post_title, $m ) ) {
+            $subject = trim( $m[1] );
+        }
+
         $qa_pairs = array();
-        $in_faq_section = false;
+        $max      = 5;
 
         for ( $i = 0; $i < count( $parts ); $i++ ) {
             $part = trim( $parts[ $i ] );
 
-            // Check if this is a heading
-            if ( ! preg_match( '/<h([23])[^>]*>(.*?)<\/h\1>/is', $part, $heading_match ) ) {
+            if ( ! preg_match( '/<h3[^>]*>(.*?)<\/h3>/is', $part, $heading_match ) ) {
                 continue;
             }
 
-            $heading_text = trim( wp_strip_all_tags( $heading_match[2] ) );
+            $heading_text = trim( wp_strip_all_tags( $heading_match[1] ) );
 
-            // Strategy 1: Detect explicit FAQ section header
-            if ( preg_match( '/\b(FAQ|Frequently\s+Asked)/i', $heading_text ) ) {
-                $in_faq_section = true;
+            // Match numbered pattern: "1. Text", "1) Text", "Step 1: Text", "Step 1. Text"
+            $clean = '';
+            if ( preg_match( '/^\d+[.)]\s+(.+)$/', $heading_text, $num_m ) ) {
+                $clean = trim( $num_m[1] );
+            } elseif ( preg_match( '/^Step\s*\d+[.:]\s*(.+)$/i', $heading_text, $step_m ) ) {
+                $clean = trim( $step_m[1] );
+            } else {
                 continue;
             }
 
-            // Check if heading is a question (ends with "?" or starts with question word)
-            if ( ! self::is_question_heading( $heading_text ) ) {
-                // If we were in an explicit FAQ section and hit a non-question
-                // non-FAQ heading, we've left the section
-                if ( $in_faq_section && ! preg_match( '/\b(FAQ|Frequently\s+Asked)/i', $heading_text ) ) {
-                    $in_faq_section = false;
-                }
+            if ( strlen( $clean ) < 10 ) {
                 continue;
             }
 
-            // Get the answer: everything between this heading and the next heading
+            // Replace leading pronouns with the post subject (if known)
+            if ( $subject ) {
+                $clean = preg_replace( '/^They\'re\s/i', $subject . ' are ', $clean );
+                $clean = preg_replace( '/^They\'ve\s/i', $subject . ' have ', $clean );
+                $clean = preg_replace( '/^They\s/i',     $subject . ' ',      $clean );
+                $clean = preg_replace( '/^Their\s/i',    $subject . '\'s ',   $clean );
+            }
+
+            // Ensure it ends with "?"
+            $question = ( substr( $clean, -1 ) === '?' ) ? $clean : $clean . '?';
+
+            // Get the answer (content between this H3 and the next tag)
             $answer_html = '';
             if ( isset( $parts[ $i + 1 ] ) ) {
                 $next = trim( $parts[ $i + 1 ] );
-                // If next part is NOT a heading, it's the answer content
                 if ( ! preg_match( '/^<h[23][^>]*>/i', $next ) ) {
                     $answer_html = $next;
                 }
             }
 
-            // Clean the answer text
             $answer_text = self::clean_answer_text( $answer_html );
-
-            // Skip if answer is too short (likely not a real Q&A)
             if ( strlen( $answer_text ) < 20 ) {
                 continue;
             }
-
-            // Truncate very long answers (Google recommends concise FAQ answers)
             if ( strlen( $answer_text ) > 500 ) {
                 $answer_text = mb_substr( $answer_text, 0, 497 ) . '...';
             }
 
             $qa_pairs[] = array(
-                'question' => $heading_text,
-                'answer' => $answer_text,
+                'question' => $question,
+                'answer'   => $answer_text,
             );
+
+            if ( count( $qa_pairs ) >= $max ) {
+                break;
+            }
+        }
+
+        return $qa_pairs;
+    }
+
+    /**
+     * Extract Q&A pairs from thematic H3 headings on Spiritual Meaning posts.
+     *
+     * Applies only when the post title contains "Spiritual Meaning" or
+     * "Symbolism". Thematic headings like "Transformation and Rebirth" are
+     * converted into natural questions:
+     * "What does [topic] mean spiritually in terms of [heading]?"
+     *
+     * Headings that are already questions (handled by Strategy 1) or numbered
+     * (handled by Strategy 2) are skipped.
+     *
+     * @since 1.6.0
+     * @param string       $html Rendered HTML content.
+     * @param WP_Post|null $post Post object (required — returns [] without it).
+     * @return array Array of ['question' => string, 'answer' => string].
+     */
+    private static function extract_thematic_pairs( $html, $post = null ) {
+        if ( ! $post ) {
+            return array();
+        }
+
+        // Only applies to spiritual-meaning / symbolism posts
+        if ( ! preg_match( '/\b(spiritual\s+meaning|symbolism|symbolize)\b/i', $post->post_title ) ) {
+            return array();
+        }
+
+        // Extract the topic from the title.
+        // "The Spiritual Meaning of Fire"        → "fire"
+        // "Bird of Paradise Spiritual Meaning"   → "Bird of Paradise"
+        // "Crow Symbolism: What Does It Mean?"   → "Crow"
+        $topic = '';
+        if ( preg_match( '/spiritual\s+meaning\s+of\s+(.+?)(?:\s*[\|\-–:].*)?$/i', $post->post_title, $m ) ) {
+            $topic = trim( $m[1] );
+        } elseif ( preg_match( '/^(.+?)\s+spiritual\s+meaning/i', $post->post_title, $m ) ) {
+            $topic = trim( $m[1] );
+        } elseif ( preg_match( '/^(.+?)\s+symbolism/i', $post->post_title, $m ) ) {
+            $topic = trim( $m[1] );
+        }
+
+        if ( empty( $topic ) ) {
+            return array();
+        }
+
+        // Strip common leading articles for natural sentence flow
+        $topic = preg_replace( '/^(a|an|the)\s+/i', '', $topic );
+
+        // Split on H3 tags
+        $parts = preg_split(
+            '/(<h3[^>]*>.*?<\/h3>)/is',
+            $html,
+            -1,
+            PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY
+        );
+
+        if ( ! $parts ) {
+            return array();
+        }
+
+        // Words that signal a section heading rather than a meaningful theme
+        $skip_pattern = '/^(conclusion|takeaway|final|summary|related|introduction|overview|quick|note|tip|warning|caution|read|faq|frequently)/i';
+
+        $qa_pairs = array();
+        $max      = 5;
+
+        for ( $i = 0; $i < count( $parts ); $i++ ) {
+            $part = trim( $parts[ $i ] );
+
+            if ( ! preg_match( '/<h3[^>]*>(.*?)<\/h3>/is', $part, $heading_match ) ) {
+                continue;
+            }
+
+            $heading_text = trim( wp_strip_all_tags( $heading_match[1] ) );
+
+            // Skip if already a question (Strategy 1 covers it)
+            if ( self::is_question_heading( $heading_text ) ) {
+                continue;
+            }
+
+            // Skip numbered/stepped headings (Strategy 2 covers them)
+            if ( preg_match( '/^\d+[.)]\s|^Step\s*\d+[.:]/i', $heading_text ) ) {
+                continue;
+            }
+
+            // Skip short, vague, or navigational headings
+            if ( strlen( $heading_text ) < 5 || preg_match( $skip_pattern, $heading_text ) ) {
+                continue;
+            }
+
+            // Generate a natural spiritual-meaning question
+            $question = 'What does ' . $topic . ' mean spiritually in terms of ' . lcfirst( $heading_text ) . '?';
+
+            // Get the answer
+            $answer_html = '';
+            if ( isset( $parts[ $i + 1 ] ) ) {
+                $next = trim( $parts[ $i + 1 ] );
+                if ( ! preg_match( '/^<h[23][^>]*>/i', $next ) ) {
+                    $answer_html = $next;
+                }
+            }
+
+            $answer_text = self::clean_answer_text( $answer_html );
+            if ( strlen( $answer_text ) < 20 ) {
+                continue;
+            }
+            if ( strlen( $answer_text ) > 500 ) {
+                $answer_text = mb_substr( $answer_text, 0, 497 ) . '...';
+            }
+
+            $qa_pairs[] = array(
+                'question' => $question,
+                'answer'   => $answer_text,
+            );
+
+            if ( count( $qa_pairs ) >= $max ) {
+                break;
+            }
         }
 
         return $qa_pairs;
