@@ -64,6 +64,9 @@ class Lean_SEO {
         add_filter('query_vars', array($this, 'sitemap_query_vars'));
         add_action('template_redirect', array($this, 'handle_sitemap'));
 
+        // Disable canonical redirects for sitemap URLs to prevent redirect chains
+        add_filter('redirect_canonical', array($this, 'disable_sitemap_redirect'), 10, 2);
+
         // Admin
         if (is_admin()) {
             add_action('add_meta_boxes', array($this, 'add_meta_box'));
@@ -94,6 +97,25 @@ class Lean_SEO {
         $output .= "Sitemap: " . home_url('/sitemap.xml') . "\n";
         
         return $output;
+    }
+
+    /**
+     * Disable canonical redirects for sitemap URLs
+     *
+     * Prevents WordPress from redirecting sitemap.xml to sitemap.xml/
+     * which causes "Sitemap error" in Google Search Console
+     *
+     * @param string $redirect_url The redirect URL
+     * @param string $requested_url The requested URL
+     * @return string|false The redirect URL or false to prevent redirect
+     */
+    public function disable_sitemap_redirect($redirect_url, $requested_url) {
+        // Check if this is a sitemap request
+        if (preg_match('/sitemap[^?]*\.xml/', $requested_url)) {
+            // Prevent canonical redirect for sitemap URLs
+            return false;
+        }
+        return $redirect_url;
     }
 
     /**
