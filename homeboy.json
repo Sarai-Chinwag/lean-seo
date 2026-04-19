@@ -1,0 +1,19 @@
+{
+  "auto_cleanup": false,
+  "changelog_target": "docs/CHANGELOG.md",
+  "extensions": {
+    "wordpress": {}
+  },
+  "id": "lean-seo",
+  "remote_path": "wp-content/plugins/lean-seo",
+  "version_targets": [
+    {
+      "file": "lean-seo.php",
+      "pattern": "(?m)^\\s*\\*?\\s*Version:\\s*([0-9.]+)"
+    },
+    {
+      "file": "lean-seo.php",
+      "pattern": "LEAN_SEO_VERSION',\\s*'([0-9.]+)'"
+    }
+  ]
+}
