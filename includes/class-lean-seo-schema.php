@@ -24,6 +24,12 @@ class Lean_SEO_Schema {
         // Organization schema
         $schema[] = self::get_organization_schema();
 
+        // Person schema — empty by default; themes/plugins populate via filter.
+        $person_schema = self::get_person_schema();
+        if ($person_schema) {
+            $schema[] = $person_schema;
+        }
+
         // Article schema for posts
         if (is_singular('post')) {
             $schema[] = self::get_webpage_schema();
@@ -44,6 +50,18 @@ class Lean_SEO_Schema {
         // Filter empty values
         $schema = array_filter($schema);
 
+        /**
+         * Filter the complete JSON-LD @graph before output.
+         *
+         * Allows adding, removing, or reordering schema nodes. Runs after
+         * individual node filters (lean_seo_website_schema, etc.) so the
+         * graph this filter receives contains each node's final shape.
+         *
+         * @since 1.5.0
+         * @param array $graph Array of schema node arrays.
+         */
+        $schema = apply_filters('lean_seo_schema_graph', $schema);
+
         // Output
         $output = array(
             '@context' => 'https://schema.org',
@@ -59,7 +77,7 @@ class Lean_SEO_Schema {
      * Website schema
      */
     private static function get_website_schema() {
-        return array(
+        $schema = array(
             '@type' => 'WebSite',
             '@id' => home_url('/#website'),
             'url' => home_url('/'),
@@ -74,6 +92,14 @@ class Lean_SEO_Schema {
                 'query-input' => 'required name=search_term_string'
             )
         );
+
+        /**
+         * Filter the WebSite schema node.
+         *
+         * @since 1.5.0
+         * @param array $schema WebSite schema array.
+         */
+        return apply_filters('lean_seo_website_schema', $schema);
     }
 
     /**
@@ -103,7 +129,50 @@ class Lean_SEO_Schema {
             $schema['logo'] = $logo_schema;
         }
 
-        return $schema;
+        /**
+         * Filter the Organization schema node.
+         *
+         * Use this to add sameAs (social URLs), description, founder,
+         * contactPoint, or any other Schema.org Organization properties.
+         *
+         * @since 1.5.0
+         * @param array $schema Organization schema array.
+         */
+        return apply_filters('lean_seo_organization_schema', $schema);
+    }
+
+    /**
+     * Person schema (opt-in via filter).
+     *
+     * Not emitted by default. Sites representing an individual (personal
+     * blogs, author sites) can return a populated Person node via the
+     * lean_seo_person_schema filter and it will be added to the graph.
+     *
+     * @since 1.5.0
+     * @return array|null Person schema array, or null to omit.
+     */
+    private static function get_person_schema() {
+        $default = null;
+
+        /**
+         * Filter the Person schema node.
+         *
+         * Return a Schema.org Person array to include it in the graph,
+         * or null (default) to omit. Typical shape:
+         *
+         *     array(
+         *         '@type'       => 'Person',
+         *         '@id'         => home_url('/#person'),
+         *         'name'        => 'Jane Doe',
+         *         'url'         => home_url('/'),
+         *         'description' => 'Writer, developer, sailor.',
+         *         'sameAs'      => array('https://twitter.com/...', ...),
+         *     )
+         *
+         * @since 1.5.0
+         * @param array|null $schema Default null (omitted).
+         */
+        return apply_filters('lean_seo_person_schema', $default);
     }
 
     /**
@@ -154,7 +223,7 @@ class Lean_SEO_Schema {
      * WebPage schema
      */
     private static function get_webpage_schema() {
-        return array(
+        $schema = array(
             '@type' => 'WebPage',
             '@id' => get_permalink() . '#webpage',
             'url' => get_permalink(),
@@ -163,16 +232,30 @@ class Lean_SEO_Schema {
             'datePublished' => get_the_date('c'),
             'dateModified' => get_the_modified_date('c'),
         );
+
+        /**
+         * Filter the WebPage schema node.
+         *
+         * @since 1.5.0
+         * @param array $schema WebPage schema array.
+         */
+        return apply_filters('lean_seo_webpage_schema', $schema);
     }
 
     /**
      * Breadcrumb schema
+     *
+     * Emits a BreadcrumbList. On the homepage, only a single "Home"
+     * crumb is emitted (the current-page entry is omitted to avoid the
+     * "Home → Home" duplicate — see GitHub issue #2). On singular views,
+     * the home crumb is followed by an optional category (posts) and
+     * the current page title.
      */
     private static function get_breadcrumb_schema() {
         $items = array();
         $position = 1;
 
-        // Home
+        // Home crumb
         $items[] = array(
             '@type' => 'ListItem',
             'position' => $position++,
@@ -194,18 +277,30 @@ class Lean_SEO_Schema {
             }
         }
 
-        // Current page (no item URL for last breadcrumb)
-        $items[] = array(
-            '@type' => 'ListItem',
-            'position' => $position,
-            'name' => get_the_title()
-        );
+        // Current page (singular only — the homepage is already "Home").
+        // Last crumb intentionally omits the item URL per BreadcrumbList
+        // best practices.
+        if (is_singular() && ! is_front_page() && ! is_home()) {
+            $items[] = array(
+                '@type' => 'ListItem',
+                'position' => $position,
+                'name' => get_the_title()
+            );
+        }
 
-        return array(
+        $schema = array(
             '@type' => 'BreadcrumbList',
-            '@id' => get_permalink() . '#breadcrumb',
+            '@id' => ((is_front_page() || is_home()) ? home_url('/') : get_permalink()) . '#breadcrumb',
             'itemListElement' => $items
         );
+
+        /**
+         * Filter the BreadcrumbList schema node.
+         *
+         * @since 1.5.0
+         * @param array $schema Breadcrumb schema array.
+         */
+        return apply_filters('lean_seo_breadcrumb_schema', $schema);
     }
 
     /**

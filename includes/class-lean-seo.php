@@ -50,6 +50,7 @@ class Lean_SEO {
      */
     private function init_hooks() {
         // Meta tags
+        add_filter('pre_get_document_title', array($this, 'filter_document_title'), 10);
         add_filter('document_title_parts', array($this, 'filter_title_parts'), 10);
         add_filter('document_title_separator', array($this, 'title_separator'));
         add_action('wp_head', array($this, 'output_meta_tags'), 1);
@@ -119,6 +120,37 @@ class Lean_SEO {
     }
 
     /**
+     * Short-circuit the document <title> tag entirely.
+     *
+     * Returning a non-empty string here bypasses WordPress core's title
+     * assembly. We only act if a filter callback provides a value via
+     * the `lean_seo_document_title` filter, letting themes/site-specific
+     * plugins set the homepage title or override any context without
+     * rebuilding the full fallback chain.
+     *
+     * @since 1.5.0
+     * @param string $title Current title (empty string by default).
+     * @return string
+     */
+    public function filter_document_title($title) {
+        /**
+         * Filter the final <title> tag output.
+         *
+         * Return a non-empty string to replace WordPress's document title
+         * entirely. Return empty (default) to let core + lean_seo build
+         * the title normally. This is the only filter that can override
+         * the homepage title without touching the theme.
+         *
+         * @since 1.5.0
+         * @param string $title   Empty by default; override with a string to short-circuit.
+         * @param string $context Current page context (see Lean_SEO_Meta::get_context()).
+         */
+        $override = apply_filters('lean_seo_document_title', '', Lean_SEO_Meta::get_context());
+
+        return $override !== '' ? $override : $title;
+    }
+
+    /**
      * Filter document title parts
      */
     public function filter_title_parts($title) {
@@ -133,9 +165,18 @@ class Lean_SEO {
 
     /**
      * Title separator
+     *
+     * @since 1.0.0
+     * @since 1.5.0 Made filterable via lean_seo_title_separator.
      */
     public function title_separator($sep) {
-        return '|';
+        /**
+         * Filter the separator used in the document title.
+         *
+         * @since 1.5.0
+         * @param string $separator Default '|'.
+         */
+        return apply_filters('lean_seo_title_separator', '|');
     }
 
     /**
