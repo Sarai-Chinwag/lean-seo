@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.6.0] - 2026-04-19
+
+### Added
+- **Site Identity** settings section under Settings → Lean SEO. Configure
+  who the site represents (Person or Organization) without writing code:
+  - Identity type radio (Person | Organization)
+  - Name
+  - Description / bio
+  - Logo / photo (media picker)
+  - Default OG image (media picker, fallback for posts without featured image)
+  - Twitter @handle (normalized; leading @ stored stripped)
+  - Social profile URLs for Twitter/X, GitHub, Facebook, LinkedIn,
+    Instagram, YouTube, Mastodon (emitted as `sameAs` in schema)
+- `Lean_SEO_Identity_Applier` automatically wires settings into the
+  filters added in 1.5.0:
+  - `lean_seo_twitter_handle` ← Twitter handle setting
+  - `lean_seo_default_image` ← default OG image setting
+  - `lean_seo_person_schema` ← built when type is 'person'
+  - `lean_seo_organization_schema` ← enriched with description, logo, sameAs
+- Media uploader JS enqueued only on the Lean SEO settings page.
+
+### Changed
+- No behavior changes when identity settings are empty — the plugin
+  continues to output the same minimal schema it always has. The UI
+  is purely additive.
+
 ## [1.5.0] - 2026-04-19
 
 ### Added
