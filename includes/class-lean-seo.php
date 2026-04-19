@@ -44,6 +44,7 @@ class Lean_SEO {
         require_once LEAN_SEO_PLUGIN_DIR . 'includes/class-lean-seo-schema.php';
         require_once LEAN_SEO_PLUGIN_DIR . 'includes/class-lean-seo-admin.php';
         require_once LEAN_SEO_PLUGIN_DIR . 'includes/class-lean-seo-identity.php';
+        require_once LEAN_SEO_PLUGIN_DIR . 'includes/class-lean-seo-homepage.php';
     }
 
     /**
@@ -76,11 +77,13 @@ class Lean_SEO {
             add_action('admin_menu', array('Lean_SEO_Admin', 'add_settings_page'));
             add_action('admin_init', array('Lean_SEO_Admin', 'register_settings'));
             add_action('admin_init', array('Lean_SEO_Identity', 'register'));
+            add_action('admin_init', array('Lean_SEO_Homepage', 'register'));
             add_action('admin_enqueue_scripts', array('Lean_SEO_Identity', 'enqueue_assets'));
         }
 
-        // Identity filters run everywhere (front-end + admin previews).
+        // Filter appliers run everywhere (front-end + admin previews).
         Lean_SEO_Identity_Applier::register();
+        Lean_SEO_Homepage_Applier::register();
 
         // Filter robots.txt to include our sitemap
         add_filter('robots_txt', array($this, 'filter_robots_txt'), 999, 2);
