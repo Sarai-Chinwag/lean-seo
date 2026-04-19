@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.7.0] - 2026-04-19
+
+### Added
+- **Homepage SEO** settings section under Settings → Lean SEO:
+  - Custom homepage title (text field with template-variable support)
+  - Custom homepage meta description (textarea)
+- Template variables supported in homepage title/description:
+  - `%%sitename%%` → site name
+  - `%%tagline%%` → site tagline
+  - `%%sep%%` → title separator (respects `lean_seo_title_separator`)
+- `Lean_SEO_Homepage_Applier` wires settings into filters from 1.5.0:
+  - `lean_seo_document_title` ← homepage title when context is `home`
+  - `lean_seo_description` ← homepage description when context is `home`
+    (only when the default resolution would return an empty value or the
+    generic blog tagline — explicit per-page descriptions still win)
+
+### Changed
+- No behavior changes when homepage settings are empty — the plugin
+  continues to defer to WordPress defaults.
+
 ## [1.6.0] - 2026-04-19
 
 ### Added
