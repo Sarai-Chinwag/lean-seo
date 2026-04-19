@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.5.0] - 2026-04-19
+
+### Added
+- New filters for title, description, and social meta:
+  - `lean_seo_title` — override the resolved SEO title
+  - `lean_seo_document_title` — short-circuit the `<title>` tag (works on the homepage)
+  - `lean_seo_og_title` — override the `og:title` value
+  - `lean_seo_description` — override the resolved description (context-aware)
+  - `lean_seo_og_site_name` — override `og:site_name`
+  - `lean_seo_og_locale` — override `og:locale`
+  - `lean_seo_twitter_handle` — set `@handle` for `twitter:site`
+  - `lean_seo_title_separator` — customize the title separator (default `|`)
+- New filters for schema enrichment:
+  - `lean_seo_website_schema` — modify the WebSite node
+  - `lean_seo_organization_schema` — modify the Organization node (add `sameAs`, etc.)
+  - `lean_seo_person_schema` — opt-in Person node for personal sites
+  - `lean_seo_webpage_schema` — modify the WebPage node
+  - `lean_seo_breadcrumb_schema` — modify the BreadcrumbList node
+  - `lean_seo_schema_graph` — modify the complete `@graph` before output
+- `Lean_SEO_Meta::get_context()` helper exposing the current page context
+  (`home` | `single` | `archive` | `taxonomy` | `search` | `author` | `date` | `404` | `other`).
+
+### Changed
+- `Lean_SEO_Meta::get_description()` now applies `lean_seo_description` after
+  the default fallback chain so themes/plugins can refine the resolved value
+  without rebuilding it from scratch. The legacy `lean_seo_custom_description`
+  filter still short-circuits the chain for backwards compatibility.
+- `pre_get_document_title` is now hooked so `lean_seo_document_title` can
+  override the homepage `<title>` (which `document_title_parts` cannot).
+
+### Fixed
+- BreadcrumbList no longer emits a duplicate `Home → Home` entry on the
+  homepage. The current-page crumb is now skipped when on the front page.
+
 ## [1.2.0] - 2026-02-23
 
 ### Added

@@ -17,10 +17,36 @@ class Lean_SEO_Meta {
      */
     public static function output() {
         $description = self::get_description();
-        $image = self::get_image();
-        $url = self::get_url();
-        $site_name = get_bloginfo('name');
-        $title = wp_get_document_title();
+        $image       = self::get_image();
+        $url         = self::get_url();
+        $context     = self::get_context();
+
+        /**
+         * Filter the og:site_name value.
+         *
+         * @since 1.5.0
+         * @param string $site_name Default is get_bloginfo('name').
+         */
+        $site_name = apply_filters('lean_seo_og_site_name', get_bloginfo('name'));
+
+        /**
+         * Filter the og:locale value.
+         *
+         * @since 1.5.0
+         * @param string $locale Default is get_locale().
+         */
+        $locale = apply_filters('lean_seo_og_locale', get_locale());
+
+        $title = self::get_title();
+
+        /**
+         * Filter the og:title value specifically (overrides lean_seo_title for OG).
+         *
+         * @since 1.5.0
+         * @param string $og_title Default is the filtered title.
+         * @param string $context  Current page context (see get_context()).
+         */
+        $og_title = apply_filters('lean_seo_og_title', $title, $context);
 
         // Basic meta description
         if ($description) {
@@ -28,9 +54,9 @@ class Lean_SEO_Meta {
         }
 
         // Open Graph
-        echo '<meta property="og:locale" content="' . esc_attr(get_locale()) . '">' . "\n";
+        echo '<meta property="og:locale" content="' . esc_attr($locale) . '">' . "\n";
         echo '<meta property="og:type" content="' . (is_singular('post') ? 'article' : 'website') . '">' . "\n";
-        echo '<meta property="og:title" content="' . esc_attr($title) . '">' . "\n";
+        echo '<meta property="og:title" content="' . esc_attr($og_title) . '">' . "\n";
 
         if ($description) {
             echo '<meta property="og:description" content="' . esc_attr($description) . '">' . "\n";
@@ -76,7 +102,23 @@ class Lean_SEO_Meta {
 
         // Twitter Card
         echo '<meta name="twitter:card" content="summary_large_image">' . "\n";
-        echo '<meta name="twitter:title" content="' . esc_attr($title) . '">' . "\n";
+
+        /**
+         * Filter the @handle used for twitter:site meta.
+         *
+         * Return a string like '@username' (leading @ is normalized). Return
+         * empty string to omit the tag entirely. Default is empty.
+         *
+         * @since 1.5.0
+         * @param string $handle Default empty string.
+         */
+        $twitter_handle = apply_filters('lean_seo_twitter_handle', '');
+        if ($twitter_handle) {
+            $twitter_handle = '@' . ltrim($twitter_handle, '@');
+            echo '<meta name="twitter:site" content="' . esc_attr($twitter_handle) . '">' . "\n";
+        }
+
+        echo '<meta name="twitter:title" content="' . esc_attr($og_title) . '">' . "\n";
 
         if ($description) {
             echo '<meta name="twitter:description" content="' . esc_attr($description) . '">' . "\n";
@@ -85,6 +127,70 @@ class Lean_SEO_Meta {
         if ($image) {
             echo '<meta name="twitter:image" content="' . esc_url($image) . '">' . "\n";
         }
+    }
+
+    /**
+     * Get the title for the current request, filterable.
+     *
+     * Runs wp_get_document_title() through the lean_seo_title filter so
+     * themes and plugins can override the default without having to hook
+     * every meta output individually. Separate filters still exist for
+     * og:title and the document <title>.
+     *
+     * @since 1.5.0
+     * @return string
+     */
+    public static function get_title() {
+        $title   = wp_get_document_title();
+        $context = self::get_context();
+
+        /**
+         * Filter the resolved SEO title.
+         *
+         * @since 1.5.0
+         * @param string $title   Default is wp_get_document_title().
+         * @param string $context Current page context.
+         */
+        return apply_filters('lean_seo_title', $title, $context);
+    }
+
+    /**
+     * Get a symbolic context string for the current request.
+     *
+     * Used as the $context argument for lean_seo_title / lean_seo_description
+     * filters so callers can branch on page type without re-running conditional
+     * tags themselves.
+     *
+     * @since 1.5.0
+     * @return string One of: 'home' | 'single' | 'archive' | 'taxonomy' |
+     *                'search' | 'author' | 'date' | '404' | 'other'.
+     */
+    public static function get_context() {
+        if (is_home() || is_front_page()) {
+            return 'home';
+        }
+        if (is_singular()) {
+            return 'single';
+        }
+        if (is_post_type_archive()) {
+            return 'archive';
+        }
+        if (is_category() || is_tag() || is_tax()) {
+            return 'taxonomy';
+        }
+        if (is_search()) {
+            return 'search';
+        }
+        if (is_author()) {
+            return 'author';
+        }
+        if (is_date()) {
+            return 'date';
+        }
+        if (is_404()) {
+            return '404';
+        }
+        return 'other';
     }
 
     /**
@@ -99,14 +205,49 @@ class Lean_SEO_Meta {
 
     /**
      * Get meta description
+     *
+     * Resolves the description through the default fallback chain, then
+     * applies the lean_seo_description filter (context-aware) for fine
+     * control. The legacy lean_seo_custom_description filter still runs
+     * first and short-circuits the chain for backwards compatibility.
      */
     public static function get_description() {
-        // Allow themes/plugins to provide custom descriptions
+        // Legacy short-circuit filter (kept for backwards compatibility).
         $custom = apply_filters('lean_seo_custom_description', false);
         if ($custom) {
-            return $custom;
+            $context = self::get_context();
+            /** This filter is documented below. */
+            return apply_filters('lean_seo_description', $custom, $context);
         }
 
+        $description = self::resolve_default_description();
+        $context     = self::get_context();
+
+        /**
+         * Filter the resolved meta description.
+         *
+         * Unlike lean_seo_custom_description (which short-circuits the
+         * fallback chain), this filter runs after the default resolution
+         * and receives a context string so callers can branch on page type
+         * without duplicating conditional logic.
+         *
+         * @since 1.5.0
+         * @param string $description Resolved default description.
+         * @param string $context     Current page context (see get_context()).
+         */
+        return apply_filters('lean_seo_description', $description, $context);
+    }
+
+    /**
+     * Resolve the default description using the built-in fallback chain.
+     *
+     * Separated from get_description() so the lean_seo_description filter
+     * always runs on the final value regardless of which branch supplied it.
+     *
+     * @since 1.5.0
+     * @return string
+     */
+    protected static function resolve_default_description() {
         if (is_singular()) {
             // Custom meta description
             $custom_desc = get_post_meta(get_the_ID(), '_lean_seo_description', true);
@@ -116,13 +257,15 @@ class Lean_SEO_Meta {
 
             // Fall back to excerpt
             $post = get_post();
-            if ($post->post_excerpt) {
+            if ($post && $post->post_excerpt) {
                 return wp_strip_all_tags($post->post_excerpt);
             }
 
             // Fall back to trimmed content
-            $content = wp_strip_all_tags(strip_shortcodes($post->post_content));
-            return wp_trim_words($content, 30, '...');
+            if ($post) {
+                $content = wp_strip_all_tags(strip_shortcodes($post->post_content));
+                return wp_trim_words($content, 30, '...');
+            }
         }
 
         if (is_home() || is_front_page()) {
@@ -143,7 +286,9 @@ class Lean_SEO_Meta {
 
         if (is_author()) {
             $author = get_queried_object();
-            return sprintf('Posts by %s on %s', $author->display_name, get_bloginfo('name'));
+            if ($author) {
+                return sprintf('Posts by %s on %s', $author->display_name, get_bloginfo('name'));
+            }
         }
 
         return get_bloginfo('description');
